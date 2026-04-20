@@ -28,8 +28,14 @@ func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	badWords := map[string]struct{}{
+		"kerfuffle": {},
+		"sharbert":  {},
+		"fornax":    {},
+	}
+
 	respondWithJSON(w, http.StatusOK, returnVals{
 		Valid: true,
-		CleanedBody: replaceBadWord(params.Body, []string{"kerfuffle", "sharbert", "fornax"}),
+		CleanedBody: replaceBadWord(params.Body, badWords),
 	})
 }

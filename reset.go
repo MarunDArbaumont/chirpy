@@ -2,8 +2,20 @@ package main
 
 import "net/http"
 
-func (cfg *apiConfig) handlerResetNumber(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerResetNumber(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Reset is only allowed in dev environment."))
+		return
+	}
+
 	cfg.fileserverHits.Store(0)
+	if err := cfg.database.DeleteAllUsers(r.Context()); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Failed to reset the database: " + err.Error()))
+		return
+	}
+	
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hits reset to 0"))
+	w.Write([]byte("Hits reset to 0 and database reset to initial state."))
 }
