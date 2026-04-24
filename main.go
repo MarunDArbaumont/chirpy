@@ -17,11 +17,13 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	database *database.Queries
 	platform string
+	secret string
 }
 
 func main () {
 	godotenv.Load()
 
+	tokenSecret := os.Getenv("SECRET")
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
@@ -35,6 +37,7 @@ func main () {
 		fileserverHits: atomic.Int32{},
 		database: dbQueries,
 		platform: platform,
+		secret: tokenSecret,
 	}
 
 	const filepathRoot = "."
@@ -54,9 +57,10 @@ func main () {
 	mux.HandleFunc("GET /api/chirps", cfg.handlerAllChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.handlerSingleChirp)
 	mux.HandleFunc("POST /api/users", cfg.handlerUsers)
+	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
 
 	mux.HandleFunc("GET /admin/metrics", cfg.handlerMetrics)
-	mux.HandleFunc("POST /admin/reset", cfg.handlerResetUsers)
+	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)
 
 	log.Printf("Serving on port: %s\n", port)
 	log.Fatal(serv.ListenAndServe())

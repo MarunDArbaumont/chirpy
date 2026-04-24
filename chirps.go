@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/MarunDArbaumont/chirpy/internal/database"
+	"github.com/MarunDArbaumont/chirpy/internal/auth"
 )
 
 type Chirp struct {
@@ -20,23 +21,34 @@ type Chirp struct {
 func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
 	}
 	type returnVals struct {
 		Chirp
 	}
 
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error while retreiving token", err)
+		return
+	}
+
+	currentUserID, err := auth.ValidateJWT(bearerToken, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "log in before posting chirp", err)
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Couldn't decode parameters", err)
+		respondWithError(w, http.StatusBadRequest, "couldn't decode parameters", err)
 		return
 	}
 
 	const maxChirpLength = 140
 	if len(params.Body) > maxChirpLength {
-		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
+		respondWithError(w, http.StatusBadRequest, "chirp is too long", nil)
 		return
 	}
 
@@ -49,10 +61,10 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 	
 	chirp, err := cfg.database.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   params.Body,
-    	UserID: params.UserID,
+    	UserID: currentUserID,
 	})
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Something went wrong when creating chirp", err)
+		respondWithError(w, http.StatusInternalServerError, "something went wrong when creating chirp", err)
 		return
 	}
 
@@ -70,7 +82,7 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) handlerAllChirps(w http.ResponseWriter, r *http.Request) {
 	dbChirps, err := cfg.database.GetAllChirps(r.Context())
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Something went wrong when retrieving chirps", err)
+		respondWithError(w, http.StatusInternalServerError, "something went wrong when retrieving chirps", err)
 		return
 	}
 
@@ -96,11 +108,12 @@ func (cfg *apiConfig) handlerSingleChirp(w http.ResponseWriter, r *http.Request)
 
 	id, err := uuid.Parse(r.PathValue("chirpID"))
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "The id given is not an id", err)
+		respondWithError(w, http.StatusBadRequest, "the id given is not an id", err)
+		return
 	}
 	chirp, err := cfg.database.GetChirpByID(r.Context(), id)
 	if err != nil {
-		respondWithError(w, http.StatusNotFound, "Chirp not found or doesn't exist anymore", err)
+		respondWithError(w, http.StatusNotFound, "chirp not found or doesn't exist anymore", err)
 		return
 	}
 

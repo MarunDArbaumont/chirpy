@@ -4,8 +4,11 @@ import (
 	"net/http"
 	"encoding/json"
 	"time"
+	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/MarunDArbaumont/chirpy/internal/database"
+	"github.com/MarunDArbaumont/chirpy/internal/auth"
 )
 
 type User struct {
@@ -13,11 +16,14 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Password  string	`json:"hashed_password"`
+	Token 	  string 	`json:"token"`
 }
 
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Email string `json:"email"`
+		Email 	 string `json:"email"`
+		Password string `json:"password"`
 	}
 	type returnVals struct {
 		User
@@ -27,13 +33,25 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
+		respondWithError(w, http.StatusInternalServerError, "couldn't decode parameters", err)
 		return
 	}
 
-	user, err := cfg.database.CreateUser(r.Context(), params.Email)
+	hashedPassword, err := auth.HashPassword(params.Password)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Email already exist or not valid", err)
+		respondWithError(w, http.StatusInternalServerError, "couldn't hash password", err)
+	}
+
+	user, err := cfg.database.CreateUser(r.Context(), database.CreateUserParams{
+		Email:   params.Email,
+    	HashedPassword: sql.NullString{
+			String: hashedPassword,
+			Valid: true,
+		},
+	})
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "email already exist or not valid", err)
 		return
 	}
 
@@ -47,13 +65,67 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (cfg *apiConfig) handlerResetUsers(w http.ResponseWriter, r *http.Request) {
-	if cfg.platform != "dev" {
-		respondWithError(w, http.StatusForbidden, "You are not authorized to be here", nil)
+
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email 	 	string 	`json:"email"`
+		Password 	string 	`json:"password"`
+		ExpiresIn 	int		`json:"expires_in_seconds"`
+	}
+	type returnVals struct {
+		User
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't decode parameters", err)
 		return
 	}
 
-	if err := cfg.database.DeleteAllUsers(r.Context()); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error while deleting users", err)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't hash password", err)
+		return
 	}
+
+	user, err := cfg.database.GetUserByEmail(r.Context(), params.Email)
+
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "this email is not valid", err)
+		return
+	}
+
+	isSame, err := auth.CheckPasswordHash(params.Password, user.HashedPassword.String)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't compare passwords", err)
+		return
+	}
+
+	if !isSame {
+		respondWithError(w, http.StatusUnauthorized, "the password is incorrect", err)
+		return
+	}
+
+	tokenExpires := time.Duration(1) * time.Hour
+
+	if params.ExpiresIn != 0 {
+		tokenExpires = time.Duration(params.ExpiresIn) * time.Second
+	}
+
+	token, err := auth.MakeJWT(user.ID, cfg.secret, tokenExpires)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error while creating JWT", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, returnVals{
+		User: User {
+			ID: user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			Email: user.Email,
+			Token: token,
+		},
+	})
 }
