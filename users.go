@@ -12,12 +12,13 @@ import (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Password  string	`json:"hashed_password"`
-	Token 	  string 	`json:"token"`
+	ID        		uuid.UUID `json:"id"`
+	CreatedAt 		time.Time `json:"created_at"`
+	UpdatedAt 		time.Time `json:"updated_at"`
+	Email     		string    `json:"email"`
+	Password  		string	`json:"hashed_password"`
+	Token 	  		string 	`json:"token"`
+	RefreshToken 	string	`json:"refresh_token"`
 }
 
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +71,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Email 	 	string 	`json:"email"`
 		Password 	string 	`json:"password"`
-		ExpiresIn 	int		`json:"expires_in_seconds"`
 	}
 	type returnVals struct {
 		User
@@ -107,15 +107,20 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenExpires := time.Duration(1) * time.Hour
-
-	if params.ExpiresIn != 0 {
-		tokenExpires = time.Duration(params.ExpiresIn) * time.Second
-	}
-
-	token, err := auth.MakeJWT(user.ID, cfg.secret, tokenExpires)
+	token, err := auth.MakeJWT(user.ID, cfg.secret, time.Hour)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "error while creating JWT", err)
+		return
+	}
+
+	refreshToken, err := cfg.database.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token: auth.MakeRefreshToken(),
+		UserID: user.ID,
+		ExpiresAt: time.Now().Add(60 * 24 * time.Hour),
+		RevokedAt: sql.NullTime{},
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error while creating refresh token", err)
 		return
 	}
 
@@ -126,6 +131,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: user.UpdatedAt,
 			Email: user.Email,
 			Token: token,
+			RefreshToken:  refreshToken.Token,
 		},
 	})
 }
