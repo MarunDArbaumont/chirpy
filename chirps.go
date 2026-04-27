@@ -127,3 +127,41 @@ func (cfg *apiConfig) handlerSingleChirp(w http.ResponseWriter, r *http.Request)
 		},
 	})
 }
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "the id given is not an id", err)
+		return
+	}
+	chirp, err := cfg.database.GetChirpByID(r.Context(), id)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "chirp not found or doesn't exist anymore", err)
+		return
+	}
+
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error while retreiving token", err)
+		return
+	}
+
+	currentUserID, err := auth.ValidateJWT(accessToken, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "log in before posting chirp", err)
+		return
+	}
+
+	if chirp.UserID != currentUserID {
+		respondWithError(w, http.StatusForbidden, "you are not allowed to delete this chirp", err)
+		return
+	}
+
+	err = cfg.database.DeleteChirp(r.Context(), id)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "chirp not found", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

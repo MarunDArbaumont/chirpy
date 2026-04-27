@@ -135,3 +135,62 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email 	 	string 	`json:"email"`
+		Password 	string 	`json:"password"`
+	}
+
+	type returnVals struct {
+		User
+	}
+
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "error while retreiving token", err)
+		return
+	}
+
+	currentUserID, err := auth.ValidateJWT(accessToken, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "log in before posting chirp", err)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't decode parameters", err)
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't hash password", err)
+		return
+	}
+
+	updateUser, err := cfg.database.UpdateUser(r.Context(), database.UpdateUserParams{
+		Email: params.Email,
+		HashedPassword: sql.NullString{
+			String: hashedPassword,
+			Valid: true,
+		},
+		ID: currentUserID,
+	})
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "user not found", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, returnVals{
+		User: User {
+			ID: updateUser.ID,
+			CreatedAt: updateUser.CreatedAt,
+			UpdatedAt: updateUser.UpdatedAt,
+			Email: updateUser.Email,
+		},
+	})
+}
