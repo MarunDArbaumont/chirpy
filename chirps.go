@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"encoding/json"
 	"time"
+	"sort"
 
 	"github.com/google/uuid"
 	"github.com/MarunDArbaumont/chirpy/internal/database"
@@ -80,6 +81,33 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) handlerAllChirps(w http.ResponseWriter, r *http.Request) {
+	authorID := r.URL.Query().Get("author_id")
+	sorted := r.URL.Query().Get("sort")
+	if authorID != "" {
+		id, err := uuid.Parse(authorID)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "the given id is not an id", err)
+			return
+		}
+		usersChirps, err := cfg.database.GetAllChirpsByUserID(r.Context(), id)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "the given id doesn't exist", err)
+			return
+		}
+		chirps := []Chirp{}
+		for _, usersChirp := range usersChirps {
+			chirps = append(chirps, Chirp{
+				ID: 		usersChirp.ID,
+				CreatedAt: 	usersChirp.CreatedAt,
+				UpdatedAt: 	usersChirp.UpdatedAt,
+				Body: 		usersChirp.Body,
+				UserID: 	usersChirp.UserID,
+			})
+		}
+		respondWithJSON(w, http.StatusOK, chirps)
+		return
+	}
+
 	dbChirps, err := cfg.database.GetAllChirps(r.Context())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "something went wrong when retrieving chirps", err)
@@ -96,7 +124,9 @@ func (cfg *apiConfig) handlerAllChirps(w http.ResponseWriter, r *http.Request) {
 			UserID: 	dbChirp.UserID,
 		})
 	}
-
+	if sorted == "desc" {
+		sort.Slice(chirps, func(i, j int) bool { return chirps[i].CreatedAt.After(chirps[j].CreatedAt) })
+	}
 
 	respondWithJSON(w, http.StatusOK, chirps)
 }

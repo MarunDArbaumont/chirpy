@@ -26,3 +26,12 @@ func TestGetBearerToken(t *testing.T) {
 		t.Errorf(`GetBearerToken(header) = %v should be "THIS_IS_THE_TOKEN"`, got)
 	}
 }
+
+func TestGetAPIKey(t *testing.T) {
+	header := http.Header{}
+	header.Add("Authorization", "ApiKey THIS_IS_THE_API_KEY")
+	got, _ := GetAPIKey(header)
+	if got != "THIS_IS_THE_API_KEY" {
+		t.Errorf(`GetAPIKey(header) = %v should be "THIS_IS_THE_API_KEY"`, got)
+	}
+}
